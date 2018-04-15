@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use MadisonSolutions\PHPTree\StdTreeNode;
 use MadisonSolutions\PHPTree\CircularReferenceException;
 
-class HasTreeStructureTest extends TestCase
+class StdTreeNodeTest extends TestCase
 {
     // helper method for verifying a child-parent relationship is as expected
     protected function assertChildParentKey(StdTreeNode $child, ?StdTreeNode $parent, ?string $key)

@@ -4,12 +4,18 @@ namespace MadisonSolutions\PHPTree\Tests;
 
 use PHPUnit\Framework\TestCase;
 use MadisonSolutions\PHPTree\TreeNode;
+use MadisonSolutions\PHPTree\Registry;
 use MadisonSolutions\PHPTree\CircularReferenceException;
 
 class TreeNodeTest extends TestCase
 {
+    public static function setUpBeforeClass()
+    {
+        include_once(__DIR__ . '/DummyTreeNode.php');
+    }
+
     // helper method for verifying a child-parent relationship is as expected
-    protected function assertChildParentKey(TreeNode $child, ?TreeNode $parent, ?string $key)
+    protected function assertChildParentKey(DummyTreeNode $child, ?DummyTreeNode $parent, ?string $key)
     {
         $this->assertSame($parent, $child->parent());
         $this->assertSame($key, $child->key());
@@ -31,11 +37,11 @@ class TreeNodeTest extends TestCase
 
     public function testHierarchy()
     {
-        $root = new TreeNode();
-        $a = new TreeNode();
-        $b = new TreeNode();
-        $c = new TreeNode();
-        $d = new TreeNode();
+        $root = new DummyTreeNode();
+        $a = new DummyTreeNode();
+        $b = new DummyTreeNode();
+        $c = new DummyTreeNode();
+        $d = new DummyTreeNode();
 
         $this->assertSame([], $root->children());
         $this->assertChildParentKey($a, null, null);
@@ -103,22 +109,22 @@ class TreeNodeTest extends TestCase
     public function testArrayAccess()
     {
         // test you can get and set node children via array notation
-        $root = new TreeNode();
-        $a = new TreeNode();
+        $root = new DummyTreeNode();
+        $a = new DummyTreeNode();
         $root['a'] = $a;
         $this->assertSame($a, $root['a']);
         $this->assertSame(['a' => $a], $root->children());
         $this->assertChildParentKey($a, $root, 'a');
         $this->assertTrue(isset($root['a']));
         $this->assertFalse(isset($a['b']));
-        $b = new TreeNode();
+        $b = new DummyTreeNode();
         $a['b'] = $b;
         $this->assertSame($b, $a['b']);
         $this->assertSame($b, $root['a']['b']);
         $this->assertTrue(isset($a['b']));
 
         // test overwriting an existing key, the old value should be detached
-        $b2 = new TreeNode();
+        $b2 = new DummyTreeNode();
         $a['b'] = $b2;
         $this->assertSame($b2, $a['b']);
         $this->assertChildParentKey($b, null, null);
@@ -133,18 +139,18 @@ class TreeNodeTest extends TestCase
     public function testPickWithArrays()
     {
         // test the pick method for getting nodes deep into the tree
-        $root = new TreeNode();
+        $root = new DummyTreeNode();
 
         $this->assertSame(null, $root->pick(['a']));
 
-        $a = new TreeNode('foo');
+        $a = new DummyTreeNode('foo');
         $root->addChild('a', $a);
 
         $a2 = $root->pick(['a']);
         $this->assertSame($a2, $a);
-        $this->assertSame('foo', $a2->obj);
+        $this->assertSame('foo', $a2->value);
 
-        $b = new TreeNode();
+        $b = new DummyTreeNode();
         $a->addChild('b', $b);
         $this->assertSame($b, $a->pick(['b']));
         $this->assertSame($b, $root->pick(['a','b']));
@@ -153,18 +159,18 @@ class TreeNodeTest extends TestCase
     public function testPickWithStrings()
     {
         // test the pick method for getting nodes deep into the tree
-        $root = new TreeNode();
+        $root = new DummyTreeNode();
 
         $this->assertSame(null, $root->pick('a'));
 
-        $a = new TreeNode('foo');
+        $a = new DummyTreeNode('foo');
         $root->addChild('a', $a);
 
         $a2 = $root->pick('a');
         $this->assertSame($a2, $a);
-        $this->assertSame('foo', $a2->obj);
+        $this->assertSame('foo', $a2->value);
 
-        $b = new TreeNode();
+        $b = new DummyTreeNode();
         $a->addChild('b', $b);
         $this->assertSame($b, $a->pick('b'));
         $this->assertSame($b, $root->pick('a/b'));
@@ -173,9 +179,9 @@ class TreeNodeTest extends TestCase
     public function testCircularReference()
     {
         // test exception is thrown if you try to create a circular reference
-        $root = new TreeNode();
-        $root['a'] = $a = new TreeNode();
-        $a['b'] = $b = new TreeNode();
+        $root = new DummyTreeNode();
+        $root['a'] = $a = new DummyTreeNode();
+        $a['b'] = $b = new DummyTreeNode();
         $this->assertThrows(CircularReferenceException::class, function () use ($root, $b) {
             $b->addChild('root', $root);
         });
@@ -183,18 +189,18 @@ class TreeNodeTest extends TestCase
 
     public function testPaths()
     {
-        $this->assertSame([], TreeNode::parsePath(''));
-        $this->assertSame([], TreeNode::parsePath('/'));
-        $this->assertSame([], TreeNode::parsePath(' / '));
-        $this->assertSame(['0'], TreeNode::parsePath('0'));
-        $this->assertSame(['0','0'], TreeNode::parsePath('0/0'));
-        $this->assertSame(['0','0'], TreeNode::parsePath('/0/0/ '));
-        $this->assertSame(['foo','bar'], TreeNode::parsePath('/foo/bar'));
-        $this->assertSame(['foo','','bar'], TreeNode::parsePath('foo//bar'));
+        $this->assertSame([], Registry::parsePath(''));
+        $this->assertSame([], Registry::parsePath('/'));
+        $this->assertSame([], Registry::parsePath(' / '));
+        $this->assertSame(['0'], Registry::parsePath('0'));
+        $this->assertSame(['0','0'], Registry::parsePath('0/0'));
+        $this->assertSame(['0','0'], Registry::parsePath('/0/0/ '));
+        $this->assertSame(['foo','bar'], Registry::parsePath('/foo/bar'));
+        $this->assertSame(['foo','','bar'], Registry::parsePath('foo//bar'));
 
-        $root = new TreeNode();
-        $root['a'] = $a = new TreeNode();
-        $a['b'] = $b = new TreeNode();
+        $root = new DummyTreeNode();
+        $root['a'] = $a = new DummyTreeNode();
+        $a['b'] = $b = new DummyTreeNode();
 
         // test nodes know their own keys
         $this->assertSame('a', $a->key());
@@ -208,17 +214,17 @@ class TreeNodeTest extends TestCase
 
     public function testTraversal()
     {
-        $root = new TreeNode(0);
-        $root['a'] = $a = new TreeNode(1);
-        $root['a']['b'] = $b = new TreeNode(2);
-        $root['a']['c'] = $c = new TreeNode(3);
+        $root = new DummyTreeNode(0);
+        $root['a'] = $a = new DummyTreeNode(1);
+        $root['a']['b'] = $b = new DummyTreeNode(2);
+        $root['a']['c'] = $c = new DummyTreeNode(3);
 
         // test forEachDeep method - the function below uses forEachDeep to traverse the tree
         // and return a string composed of details of each node visited
         $testFn = function ($node) {
             $out = '';
             $node->forEachDeep(function ($node, $relPath) use (&$out) {
-                $out .= '('.implode('/', $relPath).':'.$node->obj.')';
+                $out .= '('.implode('/', $relPath).':'.$node->value.')';
             });
             return $out;
         };

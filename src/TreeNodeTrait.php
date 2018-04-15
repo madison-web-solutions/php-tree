@@ -2,69 +2,16 @@
 
 namespace MadisonSolutions\PHPTree;
 
-class TreeNode implements \ArrayAccess
+trait TreeNodeTrait
 {
     /**
-     * Split a slash-separated path string into an array of components.
+     * Get this node's parent
      *
-     * If an array is provided it is returned unchanged.
-     *
-     * @param string|array $path Path string (or array of path components).
-     * @return array Array of path components.
-     * @throws \InvalidArgumentException if the argument is not a string or an array.
+     * @return string|null This node's parent, or null if this node has no parent.
      */
-    public static function parsePath($path) : array
+    public function parent() : ?object
     {
-        if (is_string($path)) {
-            $path = trim(trim($path), '/');
-            $path = ($path === '') ? [] : explode('/', $path);
-        }
-        if (! is_array($path)) {
-            throw new \InvalidArgumentException("Tree Node path must be string or array");
-        }
-        return $path;
-    }
-
-    /**
-     * @var mixed The object or data at this position in the tree.
-     */
-    public $obj = null;
-
-    /**
-     * @var TreeNode|null This node's parent node in the tree,
-     *     or null if this node is the root of the tree.
-     */
-    protected $parent = null;
-
-    /**
-     * @var string|null This node's key, which is how this node is indexed from its parent,
-     *    or null if this node has no parent.
-     */
-    protected $key = null;
-
-    /**
-     * @var TreeNode[] Array of this node's child nodes, indexed by the child nodes keys.
-     */
-    protected $children = [];
-
-    /**
-     * Create a new TreeNode
-     *
-     * @param mixed $obj The object or data at this position in the tree.
-     */
-    public function __construct($obj = null)
-    {
-        $this->obj = $obj;
-    }
-
-    /**
-     * Get the parent node
-     *
-     * @return TreeNode|null The parent node or null if this node is the root of the tree.
-     */
-    public function parent() : ?TreeNode
-    {
-        return $this->parent;
+        return Registry::parent($this);
     }
 
     /**
@@ -74,17 +21,28 @@ class TreeNode implements \ArrayAccess
      */
     public function key() : ?string
     {
-        return $this->key;
+        return Registry::key($this);
     }
 
     /**
      * Get this node's children
      *
-     * @return TreeNode[] Array of child nodes, indexed by the child nodes keys.
+     * @return object[] Array of child nodes, indexed by the child nodes keys.
      */
     public function children() : array
     {
-        return $this->children;
+        return Registry::children($this);
+    }
+
+    /**
+     * Check whether a node is an ancestor of this node.
+     *
+     * @param object $a The node to check.
+     * @return bool True if $a is an ancestor of this node, false otherwise.
+     */
+    public function isAncestorOf(object $a) : bool
+    {
+        return Registry::isAncestorOf($this, $a);
     }
 
     /**
@@ -92,23 +50,14 @@ class TreeNode implements \ArrayAccess
      *
      * @param string $key The key for the newly inserted child node. If this node already has a child
      *    with the same key, the old node will be detached before the new node is inserted.
-     * @param TreeNode $node The node to be inserted. If the new node already has a parent, it will be
+     * @param object $node The node to be inserted. If the new node already has a parent, it will be
      *    detached from it's old parent first.
-     * @return TreeNode The current node is returned for chaining.
+     * @return self The current node is returned for chaining.
      * @throws CircularReferenceException If inserting the node would break the tree by creating a loop
      */
-    public function addChild(string $key, TreeNode $node) : TreeNode
+    public function addChild(string $key, object $node) : self
     {
-        if ($node->isAncestorOf($this)) {
-            throw new CircularReferenceException();
-        }
-        // break any existing links
-        $this->detachChild($key);
-        $node->detach();
-        // setup new links
-        $this->children[$key] = $node;
-        $node->parent = $this;
-        $node->key = $key;
+        Registry::addChild($this, $key, $node);
         return $this;
     }
 
@@ -119,27 +68,21 @@ class TreeNode implements \ArrayAccess
      * If this node has no child with the specified key, no action is taken and null returned.
      *
      * @param string $key The key at which to detach a node.
-     * @return TreeNode|null The detached node, or null if there was no child with the specified key.
+     * @return object|null The detached node, or null if there was no child with the specified key.
      */
-    public function detachChild(string $key) : ?TreeNode
+    public function detachChild(string $key) : ?object
     {
-        $existing = @ $this->children[$key];
-        if ($existing) {
-            unset($this->children[$key]);
-            $existing->parent = null;
-            $existing->key = null;
-        }
-        return $existing;
+        return Registry::detachChild($this, $key);
     }
 
     /**
      * Detach all of this node's children.
      *
-     * @return TreeNode The current node is returned for chaining.
+     * @return self The current node is returned for chaining.
      */
-    public function empty() : TreeNode
+    public function empty() : self
     {
-        foreach ($this->children as $key => $child) {
+        foreach ($this->children() as $key => $child) {
             $this->detachChild($key);
         }
         return $this;
@@ -148,12 +91,13 @@ class TreeNode implements \ArrayAccess
     /**
      * Detach this node from it's parent (if it has one).
      *
-     * @return TreeNode The current node is returned for chaining.
+     * @return self The current node is returned for chaining.
      */
-    public function detach() : TreeNode
+    public function detach() : self
     {
-        if ($this->parent) {
-            $this->parent->detachChild($this->key);
+        $parent = $this->parent();
+        if ($parent) {
+            $parent->detachChild($this->key());
         }
         return $this;
     }
@@ -166,16 +110,16 @@ class TreeNode implements \ArrayAccess
      * eg `$node->pick('a/2')` will look for a child with key 'a' then a grandchild with key '2'.
      *
      * @param string|array $path Slash-separated path string, or array of path components.
-     * @return TreeNode|null Node at the specified path, or null if the path doesn't exist.
+     * @return object|null Node at the specified path, or null if the path doesn't exist.
      */
-    public function pick($path) : ?TreeNode
+    public function pick($path) : ?object
     {
-        $keys = TreeNode::parsePath($path);
+        $keys = Registry::parsePath($path);
         if (empty($keys)) {
             return $this;
         } else {
             $next_key = array_shift($keys);
-            $next_node = $this->children[$next_key] ?? null;
+            $next_node = $this->children()[$next_key] ?? null;
             return $next_node ? $next_node->pick($keys) : null;
         }
     }
@@ -183,40 +127,25 @@ class TreeNode implements \ArrayAccess
     /**
      * Detach this node from the tree and replace it with another with the same key.
      *
-     * @param TreeNode The new node which will replace this one.
-     * @return TreeNode The current node is returned for chaining.
+     * @param object The new node which will replace this one.
+     * @return self The current node is returned for chaining.
      */
-    public function replaceWith(TreeNode $replacement) : TreeNode
+    public function replaceWith(object $replacement) : self
     {
-        if ($this->parent) {
-            $this->parent->addChild($this->key, $replacement);
+        $parent = $this->parent();
+        if ($parent) {
+            $parent->addChild($this->key(), $replacement);
         }
         return $this;
     }
 
     /**
-     * Check whether a node is an ancestor of this node.
-     *
-     * @param TreeNode $a The node to check.
-     * @return bool True if $a is an ancestor of this node, false otherwise.
-     */
-    public function isAncestorOf(TreeNode $a) : bool
-    {
-        while ($a = $a->parent) {
-            if ($a === $this) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
      * Check whether a node is an descendent of this node.
      *
-     * @param TreeNode $a The node to check.
+     * @param object $a The node to check.
      * @return bool True if $a is an descendent of this node, false otherwise.
      */
-    public function isDescendentOf(TreeNode $a) : bool
+    public function isDescendentOf(object $a) : bool
     {
         return $a ? $a->isAncestorOf($this) : false;
     }
@@ -227,13 +156,13 @@ class TreeNode implements \ArrayAccess
      * Ancestors are returned in a flat, numerically indexed array, starting with the immediate parent,
      * and ending with the root node.
      *
-     * @return TreeNode[] Array of this node's ancestors.
+     * @return object[] Array of this node's ancestors.
      */
     public function ancestors() : array
     {
-        $ancestors = array();
+        $ancestors = [];
         $a = $this;
-        while ($a = $a->parent) {
+        while ($a = $a->parent()) {
             $ancestors[] = $a;
         }
         return $ancestors;
@@ -242,13 +171,13 @@ class TreeNode implements \ArrayAccess
     /**
      * Get this node's top ancestor, ie the root node of this tree.
      *
-     * @return TreeNode The root node of this tree.
+     * @return object The root node of this tree.
      */
-    public function topAncestor() : TreeNode
+    public function topAncestor() : object
     {
         $a = $this;
-        while ($a->parent) {
-            $a = $a->parent;
+        while ($parent = $a->parent()) {
+            $a = $parent;
         }
         return $a;
     }
@@ -258,13 +187,13 @@ class TreeNode implements \ArrayAccess
      *
      * Descendents are returned in a flat, numerically indexed array, using a depth-first ordering.
      *
-     * @return TreeNode[] Array of this node's descendents.
+     * @return object[] Array of this node's descendents.
      */
     public function descendents() : array
     {
         $descendents = [];
         $recurse = function ($node) use (&$descendents, &$recurse) {
-            foreach ($node->children as $child) {
+            foreach ($node->children() as $child) {
                 $descendents[] = $child;
                 $recurse($child);
             }
@@ -279,15 +208,16 @@ class TreeNode implements \ArrayAccess
      * Siblings are returned in a numerically indexed array.
      * The current node is not included in the output.
      *
-     * @return TreeNode[] Array of this node's siblings.
+     * @return object[] Array of this node's siblings.
      */
     public function siblings() : array
     {
-        if (! $this->parent) {
+        $parent = $this->parent();
+        if (! $parent) {
             return [];
         }
         $siblings = [];
-        foreach ($this->parent->children as $child) {
+        foreach ($parent->children() as $child) {
             if ($child !== $this) {
                 $siblings[] = $child;
             }
@@ -298,7 +228,7 @@ class TreeNode implements \ArrayAccess
     /**
      * Get an array containing this node and it's ancestors, starting with the root node.
      *
-     * return TreeNode[] Array of 'breadcrumbs' to this node.
+     * return object[] Array of 'breadcrumbs' to this node.
      */
     public function breadcrumbs() : array
     {
@@ -314,9 +244,9 @@ class TreeNode implements \ArrayAccess
     {
         $path = [];
         $a = $this;
-        while ($a->parent) {
-            array_unshift($path, $a->key);
-            $a = $a->parent;
+        while ($parent = $a->parent()) {
+            array_unshift($path, $a->key());
+            $a = $parent;
         }
         return $path;
     }
@@ -331,14 +261,14 @@ class TreeNode implements \ArrayAccess
      *  2. The 'relative path' to the visited node from this node, as an array of keys.
      *
      * @param callable $fn The function to apply at each node in the subtree.
-     * @return TreeNode The current node is returned for chaining.
+     * @return self The current node is returned for chaining.
      */
-    public function forEachDeep(callable $fn) : TreeNode
+    public function forEachDeep(callable $fn) : self
     {
         $relPath = [];
         $recurse = function ($node) use (&$recurse, &$relPath, $fn) {
             $fn($node, $relPath);
-            foreach ($node->children as $key => $child) {
+            foreach ($node->children() as $key => $child) {
                 $relPath[] = $key;
                 $recurse($child);
                 array_pop($relPath);
@@ -355,7 +285,7 @@ class TreeNode implements \ArrayAccess
      * Note the index for this node will always be the empty string.
      * The index for descendent nodes will be a slash-sparated path string.
      *
-     * return TreeNode[] Flattened array of nodes
+     * @return object[] Flattened array of nodes
      */
     public function flatten() : array
     {
@@ -374,7 +304,7 @@ class TreeNode implements \ArrayAccess
     }
     public function offsetExists($key)
     {
-        return array_key_exists($key, $this->children);
+        return array_key_exists($key, $this->children());
     }
     public function offsetUnset($key)
     {
@@ -382,6 +312,6 @@ class TreeNode implements \ArrayAccess
     }
     public function offsetGet($key)
     {
-        return $this->children[$key] ?? null;
+        return $this->children()[$key] ?? null;
     }
 }
